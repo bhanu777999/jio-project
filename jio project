@@ -1,0 +1,228 @@
+import networkx as nx
+import matplotlib.pyplot as plt
+from shapely.geometry import Point, LineString
+import matplotlib.animation as animation
+import numpy as np
+import tkinter as tk
+import pyttsx3
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from tkinter import messagebox
+
+
+engine = pyttsx3.init()
+faulty_edges = set()
+G = nx.Graph()
+
+G.add_node('A', pos=(0, 4))
+G.add_node('B', pos=(2, 4))
+G.add_node('C', pos=(2, 0))
+G.add_node('D', pos=(2, -2))
+G.add_node('E', pos=(0, 0))
+G.add_node('F', pos=(0, 2))
+G.add_node('G', pos=(-1, 2))
+G.add_node('H', pos=(-2, 4))
+G.add_node('I', pos=(-2, 0))
+G.add_node('J', pos=(-2, -2))
+G.add_node('K', pos=(1, 2))
+G.add_node('L', pos=(0, -2))
+G.add_node('M', pos=(-2, 2))
+G.add_node('N', pos=(2, 2))
+
+G.add_edges_from([('A', 'B'), ('B', 'N'), ('N', 'C'), ('C', 'D'), ('D', 'L'), ('L', 'J'), ('J', 'I'), ('I', 'M'),
+                  ('M', 'H'), ('H', 'A'), ('I', 'G'), ('G', 'A'), ('E', 'K'), ('K', 'B'), ('J', 'E'), ('D', 'E'),
+                  ('I', 'E'), ('E', 'C'), ('M', 'G'), ('G', 'F'), ('F', 'K'), ('K', 'N'), ('A', 'F'), ('F', 'E'),
+                  ('E', 'L')])
+
+pos = nx.get_node_attributes(G, 'pos')
+
+source_node = 'A'
+target_node = 'L'
+
+fig, ax = plt.subplots()
+
+def init():
+    ax.clear()
+    nx.draw(G, pos, with_labels=True, font_weight='bold', node_size=700, node_color='lightblue', font_size=10,
+            edge_color='gray')
+    
+
+"""def update(frame):
+    ax.clear()
+    nx.draw(G, pos, with_labels=True, font_weight='bold', node_size=700, node_color='lightblue', font_size=10,
+            edge_color='gray')
+
+    # Highlight the active path from A to L with dotted lines
+    path_nodes = find_shortest_path_after_fault(G, source_node, target_node, faulty_edges)
+    if path_nodes:
+        path_edges = list(zip(path_nodes, path_nodes[1:]))
+        total_edges = len(path_edges)
+        fraction = min(frame / 100.0, 1.0)  # Adjust the fraction based on the frame number
+        visible_edges = int(total_edges * fraction)
+        visible_path = path_edges[:visible_edges]
+        nx.draw_networkx_edges(G, pos, edgelist=path_edges, edge_color='green', style='dashed', width=4.0)
+        #plt.draw()
+        
+         # Highlight the previous active paths in yellow color
+        previous_paths = list(zip(path_nodes, path_nodes[1:]))[:visible_edges - 1]
+        nx.draw_networkx_edges(G, pos, edgelist=previous_paths, edge_color='yellow', width=4.0)"""
+def update(frame):
+    ax.clear()
+    nx.draw(G, pos, with_labels=True, font_weight='bold', node_size=700, node_color='lightblue', font_size=10,
+            edge_color='gray')
+
+    # Get the initially active path from A to L
+    initial_path_nodes = find_shortest_path_after_fault(G, source_node, target_node, faulty_edges)
+
+    # Highlight the initially active path in green
+    if initial_path_nodes:
+        initial_path_edges = list(zip(initial_path_nodes, initial_path_nodes[1:]))
+        nx.draw_networkx_edges(G, pos, edgelist=initial_path_edges, edge_color='green', style='dashed', width=4.0)
+
+    # Highlight the previous active paths in yellow
+    if frame > 0:
+        previous_paths = list(zip(initial_path_nodes, initial_path_nodes[1:]))[:frame]
+        nx.draw_networkx_edges(G, pos, edgelist=previous_paths, edge_color='yellow', width=4.0)
+    
+    # Highlight faulty edges in red
+    nx.draw_networkx_edges(G, pos, edgelist=faulty_edges, edge_color='red', width=2.0)
+
+    plt.draw()
+    
+    # Adjust the speed dynamically
+    interval_factor = 10000  # Adjust this factor to control the animation speed
+    ani.event_source.interval = frame * interval_factor
+    
+    # Update the dashboard
+    #total_faults, remaining_paths = count_faults_and_paths()
+    #faults_label.config(text=f"Total Faults: {total_faults}")
+    #paths_label.config(text=f"Remaining Paths: {remaining_paths}")
+    # Update the dashboard
+    total_faults, remaining_paths = count_faults_and_paths()
+    faults_label.config(text=f"Total Faults: {total_faults}")
+    paths_label.config(text=f"Remaining Paths: {remaining_paths}")
+
+    # Check for conditions and show messages
+    if remaining_paths <= 3:
+        voice_notify(f"Only {remaining_paths} paths left to reach the destination!")
+    if remaining_paths <= 2:
+        voice_notify(f"Alert! Only {remaining_paths} paths left to reach the destination!")
+    if remaining_paths <= 1:
+        voice_notify(f"Emergency! Only {remaining_paths} path left to reach the destination!")    
+    if remaining_paths == 0:
+        voice_notify("Site isolated!")
+
+# Create a Tkinter window
+root = tk.Tk()
+root.title("Network Visualization Dashboard")
+# Create a Tkinter window
+
+fig, ax = plt.subplots()
+canvas = FigureCanvasTkAgg(fig, master=root)
+canvas_widget = canvas.get_tk_widget()
+canvas_widget.pack()
+# Dashboard labels
+dashboard_frame = tk.Frame(root)
+dashboard_frame.pack(side=tk.RIGHT, padx=10)
+faults_label = tk.Label(dashboard_frame, text="Total Faults: 0")
+faults_label.pack(pady=10)
+paths_label = tk.Label(dashboard_frame, text="Remaining Paths: 0")
+paths_label.pack(pady=10)
+# Function to count faults and remaining paths
+def count_faults_and_paths():
+    total_faults = len(faulty_edges)
+    remaining_paths = get_remaining_paths()
+    return total_faults, remaining_paths
+
+# Function to show message in a pop-up window
+def show_message(message):
+    popup = tk.Toplevel(root)
+    popup.title("Alert")
+    label = tk.Label(popup, text=message)
+    label.pack(side="top", fill="x", pady=10)
+    button = tk.Button(popup, text="Dismiss", command=popup.destroy)
+    button.pack()
+
+# Get the initially available paths
+initial_available_paths = list(nx.all_simple_paths(G, source=source_node, target=target_node))
+
+# Function to get remaining paths
+def get_remaining_paths():
+    updated_available_paths = find_shortest_path_after_fault(G, source_node, target_node, faulty_edges)
+    if updated_available_paths:
+        return len(updated_available_paths)
+    else:
+        return 0
+        
+    # Adjust the speed dynamically
+    #interval_factor = 10000  # Adjust this factor to control the animation speed
+    #ani.event_source.interval = frame * interval_factor
+    
+# Shortest path after fault
+def find_shortest_path_after_fault(graph, source, target, fault_edges):
+    modified_graph = graph.copy()
+    modified_graph.remove_edges_from(fault_edges)
+
+    try:
+        shortest_path_after_fault = nx.shortest_path(modified_graph, source=source, target=target)
+        return shortest_path_after_fault
+    except nx.NetworkXNoPath:
+        print("No Path", "There is no path from" + source_node + "to" + target_node)
+        return None
+
+# Show edge fault(Red Colour) on click listener
+def on_edge_click(event):
+    if (event.name == 'button_press_event'):
+        if event.inaxes is not None:
+            x, y = event.xdata, event.ydata
+            click_point = Point(x, y)
+
+            for edge in G.edges():
+                line = LineString([pos[edge[0]], pos[edge[1]]])
+                dist = line.distance(click_point)
+
+                if dist < 0.1:
+                    G.edges[edge]['edge_color'] = 'red'
+                    faulty_edges.add(edge)
+                    A = edge[0]
+                    B = edge[1]
+                    voice_detect_fault(A, B)
+                    show_the_updated_graph_with_shortest_path()
+
+            nx.draw(G, pos, with_labels=True, font_weight='bold', node_size=700, node_color='lightblue', font_size=10,
+                    edge_color=[G.edges[e].get('edge_color', 'gray') for e in G.edges])
+            plt.draw()
+
+# Function for voice notification
+def voice_detect_fault(a, b):
+    engine.setProperty('rate', 150)
+    engine.say('Fault detected between nodes ' + a + ' and ' + b)
+    engine.runAndWait()
+    print("its working")
+def show_the_updated_graph_with_shortest_path():
+    result = find_shortest_path_after_fault(G, source_node, target_node, faulty_edges)
+
+    if result is not None:
+        path_edges = list(zip(result, result[1:]))
+        nx.draw_networkx_edges(G, pos, edgelist=path_edges, edge_color='green', style='dashed', width=4.0)
+        plt.draw()
+    else:
+        print('ok')
+        messagebox.showinfo("No Path", "There is no path from"+ source_node +"to" + target_node)
+        print('not ok')
+
+# Connect event with main plot graph
+plt.connect('button_press_event', on_edge_click)
+
+ani = animation.FuncAnimation(fig, update, frames=10, init_func=init, interval=20, blit=False)
+"""# Dashboard labels
+dashboard_frame = tk.Frame(root)
+dashboard_frame.pack(side=tk.RIGHT, padx=10)
+faults_label = tk.Label(dashboard_frame, text="Total Faults: 0")
+faults_label.pack(pady=10)
+paths_label = tk.Label(dashboard_frame, text="Remaining Paths: 0")
+paths_label.pack(pady=10)
+
+# Start the Tkinter event loop
+root.mainloop()"""
+root.mainloop()
+plt.show()
